@@ -22,7 +22,7 @@ func TestCreateLogExporterGRPC(t *testing.T) {
 		Insecure: true,
 	}
 
-	exp, shutdown, err := createLogExporter(ctx, cfg)
+	exp, shutdown, err := createLogExporter(ctx, &cfg)
 	if err != nil {
 		t.Fatalf("createLogExporter(grpc) unexpected error: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestCreateLogExporterHTTP(t *testing.T) {
 		Insecure: true,
 	}
 
-	exp, shutdown, err := createLogExporter(ctx, cfg)
+	exp, shutdown, err := createLogExporter(ctx, &cfg)
 	if err != nil {
 		t.Fatalf("createLogExporter(http) unexpected error: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestCreateLogExporterDefaultProtocol(t *testing.T) {
 		Insecure: true,
 	}
 
-	exp, shutdown, err := createLogExporter(ctx, cfg)
+	exp, shutdown, err := createLogExporter(ctx, &cfg)
 	if err != nil {
 		t.Fatalf("createLogExporter(default) unexpected error: %v", err)
 	}
@@ -103,7 +103,7 @@ func TestCreateLogExporterWithHeaders(t *testing.T) {
 		},
 	}
 
-	exp, shutdown, err := createLogExporter(ctx, cfg)
+	exp, shutdown, err := createLogExporter(ctx, &cfg)
 	if err != nil {
 		t.Fatalf("createLogExporter(with headers) unexpected error: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestCreateLogExporterHTTPWithHeaders(t *testing.T) {
 		},
 	}
 
-	exp, shutdown, err := createLogExporter(ctx, cfg)
+	exp, shutdown, err := createLogExporter(ctx, &cfg)
 	if err != nil {
 		t.Fatalf("createLogExporter(http with headers) unexpected error: %v", err)
 	}
@@ -152,7 +152,7 @@ func TestCreateLogExporterHTTPSecure(t *testing.T) {
 		Insecure: false, // TLS enabled
 	}
 
-	exp, shutdown, err := createLogExporter(ctx, cfg)
+	exp, shutdown, err := createLogExporter(ctx, &cfg)
 	if err != nil {
 		t.Fatalf("createLogExporter(http secure) unexpected error: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestCreateMetricReaderGRPC(t *testing.T) {
 		Insecure: true,
 	}
 
-	reader, shutdown, err := createMetricReader(ctx, cfg)
+	reader, shutdown, err := createMetricReader(ctx, &cfg)
 	if err != nil {
 		t.Fatalf("createMetricReader(grpc) unexpected error: %v", err)
 	}
@@ -203,7 +203,7 @@ func TestCreateMetricReaderHTTP(t *testing.T) {
 		Insecure: true,
 	}
 
-	reader, shutdown, err := createMetricReader(ctx, cfg)
+	reader, shutdown, err := createMetricReader(ctx, &cfg)
 	if err != nil {
 		t.Fatalf("createMetricReader(http) unexpected error: %v", err)
 	}
@@ -229,7 +229,7 @@ func TestCreateMetricReaderDefaultProtocol(t *testing.T) {
 		Insecure: true,
 	}
 
-	reader, shutdown, err := createMetricReader(ctx, cfg)
+	reader, shutdown, err := createMetricReader(ctx, &cfg)
 	if err != nil {
 		t.Fatalf("createMetricReader(default) unexpected error: %v", err)
 	}
@@ -255,7 +255,7 @@ func TestCreateMetricReaderWithHeaders(t *testing.T) {
 		},
 	}
 
-	reader, shutdown, err := createMetricReader(ctx, cfg)
+	reader, shutdown, err := createMetricReader(ctx, &cfg)
 	if err != nil {
 		t.Fatalf("createMetricReader(with headers) unexpected error: %v", err)
 	}
@@ -281,7 +281,7 @@ func TestCreateMetricReaderHTTPWithHeaders(t *testing.T) {
 		},
 	}
 
-	reader, shutdown, err := createMetricReader(ctx, cfg)
+	reader, shutdown, err := createMetricReader(ctx, &cfg)
 	if err != nil {
 		t.Fatalf("createMetricReader(http with headers) unexpected error: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestCreateMetricReaderGRPCSecure(t *testing.T) {
 		Insecure: false, // TLS enabled
 	}
 
-	reader, shutdown, err := createMetricReader(ctx, cfg)
+	reader, shutdown, err := createMetricReader(ctx, &cfg)
 	if err != nil {
 		t.Fatalf("createMetricReader(grpc secure) unexpected error: %v", err)
 	}

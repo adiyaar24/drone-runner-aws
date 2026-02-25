@@ -16,6 +16,15 @@ import (
 	sdklog "go.opentelemetry.io/otel/sdk/log"
 )
 
+const (
+	// logExportTimeout is the timeout for log batch export operations.
+	logExportTimeout = 10 * time.Second
+	// logHookCloseTimeout is the timeout for closing the log hook.
+	logHookCloseTimeout = 15 * time.Second
+	// baseAttributeCapacity is the base capacity for log record attributes.
+	baseAttributeCapacity = 4
+)
+
 // OTELLogHook is a logrus.Hook that ships log entries to an OTEL log exporter.
 type OTELLogHook struct {
 	loggerProvider *sdklog.LoggerProvider
@@ -34,7 +43,7 @@ func newOTELLogHookFromExporter(exporter sdklog.Exporter, opts ...sdklog.LoggerP
 	// Build logger provider options: always include a batch processor for the exporter
 	providerOpts := []sdklog.LoggerProviderOption{
 		sdklog.WithProcessor(sdklog.NewBatchProcessor(exporter,
-			sdklog.WithExportTimeout(10*time.Second),
+			sdklog.WithExportTimeout(logExportTimeout),
 		)),
 	}
 	providerOpts = append(providerOpts, opts...)
@@ -86,7 +95,7 @@ func (h *OTELLogHook) Fire(entry *logrus.Entry) (retErr error) {
 	record.SetSeverityText(entry.Level.String())
 
 	// Collect attributes from various sources
-	attrs := make([]otellog.KeyValue, 0, len(entry.Data)+len(h.context)+4)
+	attrs := make([]otellog.KeyValue, 0, len(entry.Data)+len(h.context)+baseAttributeCapacity)
 
 	// Add logrus entry fields (entry.Data)
 	for k, v := range entry.Data {
@@ -124,16 +133,16 @@ func (h *OTELLogHook) Fire(entry *logrus.Entry) (retErr error) {
 
 // Close flushes pending logs and shuts down the logger provider.
 func (h *OTELLogHook) Close() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), logHookCloseTimeout)
 	defer cancel()
 	return h.loggerProvider.Shutdown(ctx)
 }
 
 // UpdateContext adds extra key-value pairs to every log record.
-func (h *OTELLogHook) UpdateContext(context map[string]string) {
+func (h *OTELLogHook) UpdateContext(ctxMap map[string]string) {
 	h.contextMu.Lock()
 	defer h.contextMu.Unlock()
-	for key, value := range context {
+	for key, value := range ctxMap {
 		h.context[key] = value
 	}
 }

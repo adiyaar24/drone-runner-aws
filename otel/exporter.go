@@ -17,14 +17,21 @@ import (
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 )
 
+const (
+	// protocolHTTP is the HTTP protocol for OTLP export.
+	protocolHTTP = "http"
+	// metricExportTimeout is the timeout for metric export operations.
+	metricExportTimeout = 30 * time.Second
+)
+
 // shutdownFunc is a function that gracefully shuts down an exporter.
 type shutdownFunc func(ctx context.Context) error
 
 // createLogExporter creates an OTLP log exporter based on config.
 // Returns the exporter and a shutdown function to flush/close it.
-func createLogExporter(ctx context.Context, config Config) (sdklog.Exporter, shutdownFunc, error) {
+func createLogExporter(ctx context.Context, config *Config) (sdklog.Exporter, shutdownFunc, error) {
 	switch config.Protocol {
-	case "http":
+	case protocolHTTP:
 		opts := []otlploghttp.Option{
 			otlploghttp.WithEndpoint(config.Endpoint),
 		}
@@ -60,9 +67,9 @@ func createLogExporter(ctx context.Context, config Config) (sdklog.Exporter, shu
 
 // createMetricReader creates an OTLP metric periodic reader based on config.
 // Returns the reader and a shutdown function to flush/close the underlying exporter.
-func createMetricReader(ctx context.Context, config Config) (sdkmetric.Reader, shutdownFunc, error) {
+func createMetricReader(ctx context.Context, config *Config) (sdkmetric.Reader, shutdownFunc, error) {
 	switch config.Protocol {
-	case "http":
+	case protocolHTTP:
 		opts := []otlpmetrichttp.Option{
 			otlpmetrichttp.WithEndpoint(config.Endpoint),
 		}
@@ -78,7 +85,7 @@ func createMetricReader(ctx context.Context, config Config) (sdkmetric.Reader, s
 		}
 		reader := sdkmetric.NewPeriodicReader(exporter,
 			sdkmetric.WithInterval(DefaultMetricsExportInterval),
-			sdkmetric.WithTimeout(30*time.Second),
+			sdkmetric.WithTimeout(metricExportTimeout),
 		)
 		return reader, exporter.Shutdown, nil
 
@@ -98,7 +105,7 @@ func createMetricReader(ctx context.Context, config Config) (sdkmetric.Reader, s
 		}
 		reader := sdkmetric.NewPeriodicReader(exporter,
 			sdkmetric.WithInterval(DefaultMetricsExportInterval),
-			sdkmetric.WithTimeout(30*time.Second),
+			sdkmetric.WithTimeout(metricExportTimeout),
 		)
 		return reader, exporter.Shutdown, nil
 	}

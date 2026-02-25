@@ -57,7 +57,7 @@ otelConfig := otel.Config{
     Environment:   "production",
 }
 
-if err := otel.Start(ctx, otelConfig, version, logger); err != nil {
+if err := otel.Start(ctx, &otelConfig, version, logger); err != nil {
     log.WithError(err).Error("Failed to start OTEL")
 }
 
@@ -101,7 +101,7 @@ func main() {
         Environment:   "development",
     }
 
-    if err := otel.Start(ctx, config, "1.0.0", logger); err != nil {
+    if err := otel.Start(ctx, &config, "1.0.0", logger); err != nil {
         logger.WithError(err).Fatal("Failed to start OTEL")
     }
     defer otel.Shutdown(ctx)

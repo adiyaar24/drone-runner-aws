@@ -28,7 +28,7 @@ func (m *mockLogExporter) Export(_ context.Context, records []sdklog.Record) err
 	return m.err
 }
 
-func (m *mockLogExporter) Shutdown(_ context.Context) error { return nil }
+func (m *mockLogExporter) Shutdown(_ context.Context) error   { return nil }
 func (m *mockLogExporter) ForceFlush(_ context.Context) error { return nil }
 
 // ---- mapLogrusLevel ----

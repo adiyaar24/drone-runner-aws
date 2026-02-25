@@ -21,7 +21,7 @@ func TestStartDisabled(t *testing.T) {
 		Enabled: false,
 	}
 
-	err := Start(context.Background(), cfg, "", nil)
+	err := Start(context.Background(), &cfg, "", nil)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -33,7 +33,7 @@ func TestStartNoEndpoint(t *testing.T) {
 		Endpoint: "",
 	}
 
-	err := Start(context.Background(), cfg, "", nil)
+	err := Start(context.Background(), &cfg, "", nil)
 	if err == nil {
 		t.Fatal("expected error when endpoint is empty")
 	}
@@ -102,7 +102,7 @@ func TestStartReplacesExistingManager(t *testing.T) {
 	cfg := Config{
 		Enabled: false,
 	}
-	err := Start(context.Background(), cfg, "", nil)
+	err := Start(context.Background(), &cfg, "", nil)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -317,7 +317,7 @@ func TestConcurrentStartShutdown(t *testing.T) {
 				Protocol: "grpc",
 				Insecure: true,
 			}
-			_ = Start(ctx, cfg, "", nil)
+			_ = Start(ctx, &cfg, "", nil)
 		}(i)
 		go func() {
 			defer wg.Done()
@@ -400,7 +400,7 @@ func TestStartDisabledShutsDownPrevious(t *testing.T) {
 
 	// Start with Enabled=false should still shut down the old manager.
 	cfg := Config{Enabled: false}
-	err := Start(context.Background(), cfg, "", nil)
+	err := Start(context.Background(), &cfg, "", nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -434,7 +434,7 @@ func TestStartRegistersErrorHandler(t *testing.T) {
 		Insecure: true,
 	}
 
-	err := Start(context.Background(), cfg, "", nil)
+	err := Start(context.Background(), &cfg, "", nil)
 	if err != nil {
 		t.Fatalf("Start failed: %v", err)
 	}

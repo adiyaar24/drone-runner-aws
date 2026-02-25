@@ -33,7 +33,7 @@ var (
 // It creates OTLP exporters, registers the logrus hook for log shipping,
 // and sets up the metrics bridge. Safe to call multiple times — the previous
 // manager is shut down before being replaced.
-func Start(ctx context.Context, config Config, version string, logger *logrus.Logger) error {
+func Start(ctx context.Context, config *Config, version string, logger *logrus.Logger) error {
 	if !config.Enabled {
 		logrus.Info("OTEL integration is disabled")
 		return nil
@@ -66,11 +66,11 @@ func Start(ctx context.Context, config Config, version string, logger *logrus.Lo
 	}))
 
 	mgr := &manager{
-		config: config,
+		config: *config,
 	}
 
 	// Build resource attributes
-	res, err := NewResource(ctx, config, version)
+	res, err := NewResource(ctx, *config, version)
 	if err != nil {
 		logrus.WithError(err).Warn("Failed to create OTEL resource, using default")
 	}
