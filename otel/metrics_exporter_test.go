@@ -34,7 +34,7 @@ func TestNewMetricsBridgeFromReader(t *testing.T) {
 
 func TestNewMetricsBridgeFromReaderWithOptions(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
-	res, _ := NewResource(context.Background(), Config{ServiceName: "test-svc"}, "1.0")
+	res, _ := NewResource(context.Background(), &Config{ServiceName: "test-svc"}, "1.0")
 
 	bridge, err := newMetricsBridgeFromReader(reader, sdkmetric.WithResource(res))
 	if err != nil {

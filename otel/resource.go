@@ -14,7 +14,7 @@ import (
 
 // NewResource creates an OTEL resource with standard and custom attributes.
 // The resource identifies the entity producing telemetry (service name, version, etc.).
-func NewResource(ctx context.Context, config Config, version string) (*resource.Resource, error) {
+func NewResource(ctx context.Context, config *Config, version string) (*resource.Resource, error) {
 	attrs := []attribute.KeyValue{
 		semconv.ServiceName(config.ServiceName),
 	}

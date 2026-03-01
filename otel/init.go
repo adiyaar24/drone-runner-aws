@@ -70,7 +70,7 @@ func Start(ctx context.Context, config *Config, version string, logger *logrus.L
 	}
 
 	// Build resource attributes
-	res, err := NewResource(ctx, *config, version)
+	res, err := NewResource(ctx, config, version)
 	if err != nil {
 		logrus.WithError(err).Warn("Failed to create OTEL resource, using default")
 	}

@@ -18,7 +18,7 @@ func TestNewResourceMinimal(t *testing.T) {
 		ServiceName: "my-service",
 	}
 
-	res, err := NewResource(ctx, cfg, "")
+	res, err := NewResource(ctx, &cfg, "")
 	if err != nil {
 		t.Fatalf("NewResource failed: %v", err)
 	}
@@ -44,7 +44,7 @@ func TestNewResourceWithVersion(t *testing.T) {
 		ServiceName: "drone-runner-aws",
 	}
 
-	res, err := NewResource(ctx, cfg, "2.5.0")
+	res, err := NewResource(ctx, &cfg, "2.5.0")
 	if err != nil {
 		t.Fatalf("NewResource failed: %v", err)
 	}
@@ -66,7 +66,7 @@ func TestNewResourceWithoutVersion(t *testing.T) {
 		ServiceName: "drone-runner-aws",
 	}
 
-	res, err := NewResource(ctx, cfg, "")
+	res, err := NewResource(ctx, &cfg, "")
 	if err != nil {
 		t.Fatalf("NewResource failed: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestNewResourceWithEnvironment(t *testing.T) {
 		Environment: "production",
 	}
 
-	res, err := NewResource(ctx, cfg, "1.0")
+	res, err := NewResource(ctx, &cfg, "1.0")
 	if err != nil {
 		t.Fatalf("NewResource failed: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestNewResourceWithoutEnvironment(t *testing.T) {
 		Environment: "", // empty
 	}
 
-	res, err := NewResource(ctx, cfg, "1.0")
+	res, err := NewResource(ctx, &cfg, "1.0")
 	if err != nil {
 		t.Fatalf("NewResource failed: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestNewResourceFullConfig(t *testing.T) {
 		Environment:    "staging",
 	}
 
-	res, err := NewResource(ctx, cfg, "2.0.0")
+	res, err := NewResource(ctx, &cfg, "2.0.0")
 	if err != nil {
 		t.Fatalf("NewResource failed: %v", err)
 	}
@@ -158,7 +158,7 @@ func TestNewResourceIncludesSystemAttributes(t *testing.T) {
 		ServiceName: "drone-runner-aws",
 	}
 
-	res, err := NewResource(ctx, cfg, "1.0")
+	res, err := NewResource(ctx, &cfg, "1.0")
 	if err != nil {
 		t.Fatalf("NewResource failed: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestNewResourceEmptyServiceName(t *testing.T) {
 		ServiceName: "", // empty service name
 	}
 
-	res, err := NewResource(ctx, cfg, "")
+	res, err := NewResource(ctx, &cfg, "")
 	if err != nil {
 		t.Fatalf("NewResource failed: %v", err)
 	}

@@ -186,7 +186,7 @@ func TestNewOTELLogHookFromExporterWithOptions(t *testing.T) {
 	mock := &mockLogExporter{}
 
 	// Pass a resource option
-	res, _ := NewResource(context.Background(), Config{ServiceName: "test-service"}, "1.0.0")
+	res, _ := NewResource(context.Background(), &Config{ServiceName: "test-service"}, "1.0.0")
 	hook, err := newOTELLogHookFromExporter(mock, sdklog.WithResource(res))
 	if err != nil {
 		t.Fatalf("newOTELLogHookFromExporter with options failed: %v", err)
@@ -547,7 +547,7 @@ func TestNewResourceWithConfig(t *testing.T) {
 		Environment: "testing",
 	}
 
-	res, err := NewResource(ctx, cfg, "1.2.3")
+	res, err := NewResource(ctx, &cfg, "1.2.3")
 	if err != nil {
 		t.Fatalf("NewResource failed: %v", err)
 	}
