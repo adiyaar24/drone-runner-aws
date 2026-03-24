@@ -60,9 +60,11 @@ type config struct {
 	password string
 
 	// network configuration
-	privateIP  bool   // if true, don't create public IP
-	vnetName   string // existing VNet name (optional)
-	subnetName string // existing subnet name (optional)
+	privateIP         bool   // if true, don't create public IP
+	vnetName          string // existing VNet name (optional)
+	subnetName        string // existing subnet name (optional)
+	existingSubnetID  string // full ARM ID of existing subnet (optional)
+	vnetResourceGroup string // RG containing the VNet when using name-based lookup (optional)
 
 	service *armcompute.VirtualMachinesClient
 	cred    azcore.TokenCredential
@@ -90,6 +92,14 @@ func New(opts ...Option) (drivers.Driver, error) {
 		}
 	}
 	return p, nil
+}
+
+// useExistingNetwork is true when the NIC should use an existing subnet (by ID or by vnet+subnet name).
+func (c *config) useExistingNetwork() bool {
+	if c.existingSubnetID != "" {
+		return true
+	}
+	return c.vnetName != "" && c.subnetName != ""
 }
 
 func (c *config) RootDir() string {
@@ -144,9 +154,9 @@ func (c *config) Create(ctx context.Context, opts *types.InstanceCreateOpts) (in
 	networkInterfaceName := fmt.Sprintf("%s-networkinterface", name)
 	diskName := fmt.Sprintf("%s-disk", name)
 
-	// Use existing VNet/Subnet if provided
-	useExistingNetwork := c.vnetName != "" && c.subnetName != ""
-	if useExistingNetwork {
+	// Use existing VNet/Subnet if provided (by ARM subnet ID or by vnet + subnet name).
+	useExistingNetwork := c.useExistingNetwork()
+	if useExistingNetwork && c.existingSubnetID == "" {
 		vnetName = c.vnetName
 		subnetName = c.subnetName
 	}
@@ -178,19 +188,27 @@ func (c *config) Create(ctx context.Context, opts *types.InstanceCreateOpts) (in
 
 	var subnetID string
 	if useExistingNetwork {
-		// Use existing VNet and Subnet
-		subnet, subnetErr := c.getExistingSubnet(ctx, vnetName, subnetName)
-		if subnetErr != nil {
-			logr.WithError(subnetErr).Error("could not get existing subnet")
-			return nil, subnetErr
+		if c.existingSubnetID != "" {
+			subnetID = c.existingSubnetID
+			logr.Debugf("using existing subnet ID: %s", subnetID)
+		} else {
+			vnetRG := c.resourceGroupName
+			if c.vnetResourceGroup != "" {
+				vnetRG = c.vnetResourceGroup
+			}
+			subnet, subnetErr := c.getExistingSubnet(ctx, vnetRG, vnetName, subnetName)
+			if subnetErr != nil {
+				logr.WithError(subnetErr).Error("could not get existing subnet")
+				return nil, subnetErr
+			}
+			if subnet.ID == nil {
+				err = errors.New("existing subnet has nil ID")
+				logr.WithError(err).Error("could not get subnet ID")
+				return nil, err
+			}
+			subnetID = *subnet.ID
+			logr.Debugf("using existing VNet: %s, Subnet: %s (resource group: %s)", vnetName, subnetName, vnetRG)
 		}
-		if subnet.ID == nil {
-			err = errors.New("existing subnet has nil ID")
-			logr.WithError(err).Error("could not get subnet ID")
-			return nil, err
-		}
-		subnetID = *subnet.ID
-		logr.Debugf("using existing VNet: %s, Subnet: %s", vnetName, subnetName)
 	} else {
 		// Create new VNet and Subnet
 		_, err = c.createVirtualNetwork(ctx, vnetName)
@@ -372,8 +390,7 @@ func (c *config) DestroyInstanceAndStorage(ctx context.Context, instances []*typ
 		return nil
 	}
 
-	// Check if using existing network (don't delete VNet if so)
-	useExistingNetwork := c.vnetName != "" && c.subnetName != ""
+	useExistingNetwork := c.useExistingNetwork()
 
 	for _, instanceID := range instanceIDs {
 		vnetName := fmt.Sprintf("%s-vnet", instanceID)
