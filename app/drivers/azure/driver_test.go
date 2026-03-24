@@ -99,16 +99,22 @@ func TestWithSubnet(t *testing.T) {
 
 func TestUseExistingNetwork(t *testing.T) {
 	tests := []struct {
-		name            string
-		vnetName        string
-		subnetName      string
-		wantUseExisting bool
+		name             string
+		vnetName         string
+		subnetName       string
+		existingSubnetID string
+		wantUseExisting  bool
 	}{
 		{
 			name:            "both vnet and subnet provided",
 			vnetName:        "my-vnet",
 			subnetName:      "my-subnet",
 			wantUseExisting: true,
+		},
+		{
+			name:             "subnet id only",
+			existingSubnetID: "/subscriptions/x/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v/subnets/s",
+			wantUseExisting:  true,
 		},
 		{
 			name:            "only vnet provided",
@@ -133,12 +139,12 @@ func TestUseExistingNetwork(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &config{
-				vnetName:   tt.vnetName,
-				subnetName: tt.subnetName,
+				vnetName:         tt.vnetName,
+				subnetName:       tt.subnetName,
+				existingSubnetID: tt.existingSubnetID,
 			}
-			useExisting := c.vnetName != "" && c.subnetName != ""
-			if useExisting != tt.wantUseExisting {
-				t.Errorf("useExistingNetwork = %v, want %v", useExisting, tt.wantUseExisting)
+			if c.useExistingNetwork() != tt.wantUseExisting {
+				t.Errorf("useExistingNetwork = %v, want %v", c.useExistingNetwork(), tt.wantUseExisting)
 			}
 		})
 	}
@@ -624,6 +630,7 @@ func TestPrivateIPConfigCombinations(t *testing.T) {
 		privateIP          bool
 		vnetName           string
 		subnetName         string
+		existingSubnetID   string
 		wantPrivateIP      bool
 		wantUseExistingNet bool
 	}{
@@ -632,6 +639,13 @@ func TestPrivateIPConfigCombinations(t *testing.T) {
 			privateIP:          true,
 			vnetName:           "existing-vnet",
 			subnetName:         "existing-subnet",
+			wantPrivateIP:      true,
+			wantUseExistingNet: true,
+		},
+		{
+			name:               "private IP with existing subnet id",
+			privateIP:          true,
+			existingSubnetID:   "/subscriptions/x/resourceGroups/rg/providers/Microsoft.Network/virtualNetworks/v/subnets/s",
 			wantPrivateIP:      true,
 			wantUseExistingNet: true,
 		},
@@ -667,14 +681,14 @@ func TestPrivateIPConfigCombinations(t *testing.T) {
 			WithPrivateIP(tt.privateIP)(c)
 			WithVNet(tt.vnetName)(c)
 			WithSubnet(tt.subnetName)(c)
+			WithExistingSubnetID(tt.existingSubnetID)(c)
 
 			if c.privateIP != tt.wantPrivateIP {
 				t.Errorf("privateIP = %v, want %v", c.privateIP, tt.wantPrivateIP)
 			}
 
-			useExistingNetwork := c.vnetName != "" && c.subnetName != ""
-			if useExistingNetwork != tt.wantUseExistingNet {
-				t.Errorf("useExistingNetwork = %v, want %v", useExistingNetwork, tt.wantUseExistingNet)
+			if c.useExistingNetwork() != tt.wantUseExistingNet {
+				t.Errorf("useExistingNetwork = %v, want %v", c.useExistingNetwork(), tt.wantUseExistingNet)
 			}
 		})
 	}

@@ -167,10 +167,15 @@ type (
 	}
 
 	// AzureNetwork provides network settings for Azure instances.
+	// Naming mirrors other drivers: subnet selection like AWS network.subnet_id, optional name fields like GCP network/subnetwork.
 	AzureNetwork struct {
-		VNetName   string `json:"vnet_name,omitempty" yaml:"vnet_name,omitempty"`     // Existing VNet name (optional)
-		SubnetName string `json:"subnet_name,omitempty" yaml:"subnet_name,omitempty"` // Existing subnet name (optional)
-		PrivateIP  bool   `json:"private_ip,omitempty" yaml:"private_ip,omitempty"`   // Use private IP only (no public IP)
+		VNet   string `json:"vnet,omitempty" yaml:"vnet,omitempty"`     // Existing VNet name (optional)
+		Subnet string `json:"subnet,omitempty" yaml:"subnet,omitempty"` // Existing subnet name (optional)
+		// SubnetID is the full ARM resource ID of an existing subnet; if set, vnet/subnet names are not required.
+		SubnetID string `json:"subnet_id,omitempty" yaml:"subnet_id,omitempty"`
+		// VNetResourceGroup is the resource group containing the VNet; required when the VNet is not in the VM resource_group.
+		VNetResourceGroup string `json:"vnet_resource_group,omitempty" yaml:"vnet_resource_group,omitempty"`
+		PrivateIP         bool   `json:"private_ip,omitempty" yaml:"private_ip,omitempty"` // Use private IP only (no public IP)
 	}
 
 	AzureAccount struct {

@@ -129,18 +129,18 @@ func (c *config) createSubnets(ctx context.Context, subnetName, vnetName string)
 	return &resp.Subnet, nil
 }
 
-func (c *config) getExistingSubnet(ctx context.Context, vnetName, subnetName string) (*armnetwork.Subnet, error) {
+func (c *config) getExistingSubnet(ctx context.Context, vnetResourceGroupName, vnetName, subnetName string) (*armnetwork.Subnet, error) {
 	logr := logger.FromContext(ctx)
 	subnetClient, err := armnetwork.NewSubnetsClient(c.subscriptionID, c.cred, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	resp, err := subnetClient.Get(ctx, c.resourceGroupName, vnetName, subnetName, nil)
+	resp, err := subnetClient.Get(ctx, vnetResourceGroupName, vnetName, subnetName, nil)
 	if err != nil {
 		return nil, err
 	}
-	logr.Debugf("using existing subnet: %s in vnet: %s", subnetName, vnetName)
+	logr.Debugf("using existing subnet: %s in vnet: %s (rg: %s)", subnetName, vnetName, vnetResourceGroupName)
 	return &resp.Subnet, nil
 }
 

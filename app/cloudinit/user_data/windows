@@ -1,22 +1,177 @@
 <powershell>
 $ProgressPreference = 'SilentlyContinue'
-echo "[DRONE] Initialization Starting"
+$ErrorActionPreference = 'Continue'
 
-if (${{ .IsHosted }} -eq $false) {
-	echo "[DRONE] Installing Scoop Package Manager"
-	iex "& {$(irm https://get.scoop.sh)} -RunAsAdmin"
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-	echo "[DRONE] Installing Git"
-	scoop install git --global
+# ============================================
+# PHASE DETECTION - Check if this is before or after restart
+# ============================================
+$markerFile = "C:\drone-init-phase1-complete.marker"
+$phase2Script = "C:\drone-init-phase2.ps1"
 
-	echo "[DRONE] Updating PATH so we have access to git commands (otherwise Scoop.sh shim files cannot be found)"
-	$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+if (Test-Path $markerFile) {
+    # ============================================
+    # PHASE 2: After restart - Start services
+    # ============================================
+    echo "[DRONE] Phase 2 - Post-restart initialization"
+    
+    # Wait for system to stabilize
+    Start-Sleep -Seconds 15
+    
+    # Start Docker service (should work now after restart)
+    echo "[DRONE] Starting Docker Service"
+    $timeout = 180
+    $elapsed = 0
+    while ($elapsed -lt $timeout) {
+        Start-Service docker -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 5
+        $svc = Get-Service docker -ErrorAction SilentlyContinue
+        if ($svc.Status -eq "Running") {
+            echo "[DRONE] Docker service is running!"
+            break
+        }
+        echo "[DRONE] Waiting for Docker service... ($elapsed seconds)"
+        $elapsed += 5
+    }
+    
+    # Verify Docker works
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+    docker version 2>&1 | Out-File "C:\Program Files\lite-engine\docker-version.log"
+    
+    # Pull base images for faster pipeline execution (optional but helpful)
+    echo "[DRONE] Docker ready - pulling may happen during pipeline"
+    
+    # Start lite-engine
+    echo "[DRONE] Starting lite-engine"
+    Start-Process -FilePath "C:\Program Files\lite-engine\lite-engine.exe" -ArgumentList "server --env-file=`"C:\Program Files\lite-engine\.env`"" -RedirectStandardOutput "{{ .LiteEngineLogsPath }}" -RedirectStandardError "C:\Program Files\lite-engine\log.err"
+    
+    # Wait and verify lite-engine started
+    Start-Sleep -Seconds 5
+    $le = Get-Process -Name "lite-engine" -ErrorAction SilentlyContinue
+    if ($le) {
+        echo "[DRONE] lite-engine started successfully (PID: $($le.Id))"
+    } else {
+        echo "[DRONE] WARNING: lite-engine may not have started"
+    }
+    
+    # Cleanup scheduled task
+    Unregister-ScheduledTask -TaskName "DroneInitPhase2" -Confirm:$false -ErrorAction SilentlyContinue
+    Remove-Item $markerFile -Force -ErrorAction SilentlyContinue
+    Remove-Item $phase2Script -Force -ErrorAction SilentlyContinue
+    
+    echo "[DRONE] Phase 2 Complete - VM Ready!"
+    exit 0
 }
 
-echo "[DRONE] Setup LiteEngine Certificates"
+# ============================================
+# PHASE 1: Initial setup before restart
+# ============================================
+echo "[DRONE] Phase 1 - Initial Setup"
 
-mkdir "C:\Program Files\lite-engine"
-mkdir "{{ .CertDir }}"
+# Create directories
+echo "[DRONE] Creating directories"
+New-Item -ItemType Directory -Force -Path "C:\Program Files\lite-engine" | Out-Null
+New-Item -ItemType Directory -Force -Path "{{ .CertDir }}" | Out-Null
+
+{{ if not .IsHosted }}
+# ============================================
+# INSTALL CONTAINERS FEATURE (Required for Docker)
+# Reference: https://learn.microsoft.com/en-us/virtualization/windowscontainers/quick-start/set-up-environment
+# ============================================
+echo "[DRONE] Installing Windows Containers Feature"
+Install-WindowsFeature -Name Containers -ErrorAction SilentlyContinue
+
+# ============================================
+# INSTALL HYPER-V (Required for Hyper-V isolation mode)
+# ============================================
+echo "[DRONE] Installing Hyper-V Feature"
+Install-WindowsFeature -Name Hyper-V -IncludeManagementTools -ErrorAction SilentlyContinue
+
+# ============================================
+# INSTALL DOCKER CE
+# Reference: https://learn.microsoft.com/en-us/virtualization/windowscontainers/quick-start/set-up-environment?tabs=dockerce
+# ============================================
+echo "[DRONE] Installing Docker CE using Microsoft method"
+
+# Method 1: Using DockerMsftProvider (Microsoft recommended)
+try {
+    # Install NuGet provider if not present
+    Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -ErrorAction SilentlyContinue
+    
+    # Install Docker provider and package
+    Install-Module -Name DockerMsftProvider -Repository PSGallery -Force -ErrorAction Stop
+    Install-Package -Name docker -ProviderName DockerMsftProvider -Force -ErrorAction Stop
+    echo "[DRONE] Docker CE installed via DockerMsftProvider"
+} catch {
+    echo "[DRONE] DockerMsftProvider failed, trying direct download method..."
+    
+    # Method 2: Direct download from Docker
+    try {
+        $dockerVersion = "24.0.7"
+        $dockerUrl = "https://download.docker.com/win/static/stable/x86_64/docker-$dockerVersion.zip"
+        $dockerZip = "$env:TEMP\docker.zip"
+        $dockerPath = "C:\Program Files\Docker"
+        
+        Invoke-WebRequest -Uri $dockerUrl -OutFile $dockerZip -UseBasicParsing
+        Expand-Archive -Path $dockerZip -DestinationPath "C:\Program Files" -Force
+        
+        # Add to PATH
+        $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+        if ($machinePath -notlike "*$dockerPath*") {
+            [Environment]::SetEnvironmentVariable("Path", "$machinePath;$dockerPath", "Machine")
+        }
+        
+        # Register service
+        & "$dockerPath\dockerd.exe" --register-service
+        
+        Remove-Item $dockerZip -Force -ErrorAction SilentlyContinue
+        echo "[DRONE] Docker CE installed via direct download"
+    } catch {
+        echo "[DRONE] ERROR: Docker installation failed: $_"
+    }
+}
+
+# Create docker-users group (required for Docker daemon)
+echo "[DRONE] Creating docker-users group"
+net localgroup docker-users /add 2>$null
+
+# Configure Docker daemon for Windows containers (minimal config, no group requirement)
+echo "[DRONE] Configuring Docker daemon"
+$daemonConfigPath = "C:\ProgramData\docker\config"
+New-Item -ItemType Directory -Force -Path $daemonConfigPath | Out-Null
+# Empty config - use defaults
+@{} | ConvertTo-Json | Out-File "$daemonConfigPath\daemon.json" -Encoding ASCII
+
+# ============================================
+# INSTALL GIT
+# ============================================
+echo "[DRONE] Installing Git"
+$gitVersion = "2.43.0"
+$gitUrl = "https://github.com/git-for-windows/git/releases/download/v$gitVersion.windows.1/MinGit-$gitVersion-64-bit.zip"
+$gitZip = "$env:TEMP\git.zip"
+$gitPath = "C:\Program Files\Git"
+
+try {
+    Invoke-WebRequest -Uri $gitUrl -OutFile $gitZip -UseBasicParsing
+    New-Item -ItemType Directory -Force -Path $gitPath | Out-Null
+    Expand-Archive -Path $gitZip -DestinationPath $gitPath -Force
+    
+    $machinePath = [Environment]::GetEnvironmentVariable("Path", "Machine")
+    if ($machinePath -notlike "*$gitPath\cmd*") {
+        [Environment]::SetEnvironmentVariable("Path", "$machinePath;$gitPath\cmd;$gitPath\bin", "Machine")
+    }
+    echo "[DRONE] Git installation complete"
+} catch {
+    echo "[DRONE] WARNING: Git installation failed: $_"
+}
+Remove-Item $gitZip -Force -ErrorAction SilentlyContinue
+{{ end }}
+
+# ============================================
+# CERTIFICATES SETUP
+# ============================================
+echo "[DRONE] Setup LiteEngine Certificates"
 
 $object0 = "{{ .CACert | base64 }}"
 $Object = [System.Convert]::FromBase64String($object0)
@@ -30,39 +185,44 @@ $object2 = "{{ .TLSKey | base64 }}"
 $Object = [System.Convert]::FromBase64String($object2)
 [system.io.file]::WriteAllBytes("{{ .KeyPath }}",$object)
 
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
+# Create .env file
+"CLOUD_DRIVER={{ .DriverName }}" | Out-File -FilePath "C:\Program Files\lite-engine\.env" -Encoding ASCII
 
-$primaryPluginUrl = "{{ .PluginBinaryURI }}/plugin-{{ .Platform.OS }}-{{ .Platform.Arch }}.exe"
-$secondaryPluginUrl = "{{ .PluginBinaryFallbackURI }}/plugin-{{ .Platform.OS }}-{{ .Platform.Arch }}.exe"
-$outputFile = "C:\Program Files\lite-engine\plugin.exe"
+# ============================================
+# DOWNLOAD BINARIES
+# ============================================
+echo "[DRONE] Downloading binaries"
 
+# Download lite-engine
+$primaryLiteEngineUrl = "{{ .LiteEnginePath }}/lite-engine-{{ .Platform.OS }}-{{ .Platform.Arch }}.exe"
+$secondaryLiteEngineUrl = "{{ .LiteEngineFallbackPath }}/lite-engine-{{ .Platform.OS }}-{{ .Platform.Arch }}.exe"
 try {
-    echo "[DRONE] Downloading plugin from primary URL"
-    Invoke-WebRequest -Uri $primaryPluginUrl -OutFile $outputFile
+    echo "[DRONE] Downloading lite-engine from primary URL"
+    Invoke-WebRequest -Uri $primaryLiteEngineUrl -OutFile "C:\Program Files\lite-engine\lite-engine.exe" -UseBasicParsing
 } catch {
-    echo "[DRONE] Primary URL failed for plugin, attempting to download from secondary URL"
-    Invoke-WebRequest -Uri $secondaryPluginUrl -OutFile $outputFile
+    echo "[DRONE] Primary URL failed, trying secondary URL"
+    Invoke-WebRequest -Uri $secondaryLiteEngineUrl -OutFile "C:\Program Files\lite-engine\lite-engine.exe" -UseBasicParsing
 }
 
-# Refresh the PSEnviroment
-refreshenv
-
-# This adds lite-engine directory to PATH so hcli is discoverable
-$env:Path = 'C:\Program Files\lite-engine;' + $env:Path
-
-fsutil file createnew "C:\Program Files\lite-engine\.env" 0
-echo "CLOUD_DRIVER={{ .DriverName }}" >> "C:\Program Files\lite-engine\.env"
+# Download plugin
+$primaryPluginUrl = "{{ .PluginBinaryURI }}/plugin-{{ .Platform.OS }}-{{ .Platform.Arch }}.exe"
+$secondaryPluginUrl = "{{ .PluginBinaryFallbackURI }}/plugin-{{ .Platform.OS }}-{{ .Platform.Arch }}.exe"
+try {
+    echo "[DRONE] Downloading plugin from primary URL"
+    Invoke-WebRequest -Uri $primaryPluginUrl -OutFile "C:\Program Files\lite-engine\plugin.exe" -UseBasicParsing
+} catch {
+    echo "[DRONE] Primary URL failed for plugin, trying secondary URL"
+    Invoke-WebRequest -Uri $secondaryPluginUrl -OutFile "C:\Program Files\lite-engine\plugin.exe" -UseBasicParsing
+}
 
 {{ if .AnnotationsBinaryURI }}
 $primaryAnnotationsUrl = "{{ .AnnotationsBinaryURI }}hcli-{{ .Platform.OS }}-{{ .Platform.Arch }}.exe"
 $secondaryAnnotationsUrl = "{{ .AnnotationsBinaryFallbackURI }}hcli-{{ .Platform.OS }}-{{ .Platform.Arch }}.exe"
-$hcliPath = "C:\Program Files\lite-engine\hcli.exe"
-
 try {
-    Invoke-WebRequest -Uri $primaryAnnotationsUrl -OutFile $hcliPath -ErrorAction Stop
+    Invoke-WebRequest -Uri $primaryAnnotationsUrl -OutFile "C:\Program Files\lite-engine\hcli.exe" -ErrorAction Stop -UseBasicParsing
 } catch {
     try {
-        Invoke-WebRequest -Uri $secondaryAnnotationsUrl -OutFile $hcliPath -ErrorAction Stop
+        Invoke-WebRequest -Uri $secondaryAnnotationsUrl -OutFile "C:\Program Files\lite-engine\hcli.exe" -ErrorAction Stop -UseBasicParsing
     } catch {
         echo "[DRONE] WARNING: Failed to download annotations CLI"
     }
@@ -70,38 +230,106 @@ try {
 {{ end }}
 
 {{ if .AutoInjectionBinaryURI }}
-$autoInjectionUrl = "{{ .AutoInjectionBinaryURI }}/{{ .Platform.OS }}/{{ .Platform.Arch }}/auto-injection"
-$autoInjectionPath = "C:\Program Files\lite-engine\auto-injection.exe"
-
 try {
-    Invoke-WebRequest -Uri $autoInjectionUrl -OutFile $autoInjectionPath -ErrorAction Stop
+    Invoke-WebRequest -Uri "{{ .AutoInjectionBinaryURI }}/{{ .Platform.OS }}/{{ .Platform.Arch }}/auto-injection" -OutFile "C:\Program Files\lite-engine\auto-injection.exe" -ErrorAction Stop -UseBasicParsing
 } catch {
     echo "[DRONE] WARNING: Failed to download auto-injection binary"
 }
 {{ end }}
 
-$primaryLiteEngineUrl = "{{ .LiteEnginePath }}/lite-engine-{{ .Platform.OS }}-{{ .Platform.Arch }}.exe"
-$secondaryLiteEngineUrl = "{{ .LiteEngineFallbackPath }}/lite-engine-{{ .Platform.OS }}-{{ .Platform.Arch }}.exe"
-$outputFile = "C:\Program Files\lite-engine\lite-engine.exe"
+# ============================================
+# FIREWALL RULE
+# ============================================
+echo "[DRONE] Creating firewall rule"
+New-NetFirewallRule -DisplayName "ALLOW TCP PORT 9079" -Direction inbound -Profile Any -Action Allow -LocalPort 9079 -Protocol TCP | Out-Null
 
-try {
-    echo "[DRONE] Downloading lite engine from primary URL"
-    Invoke-WebRequest -Uri $primaryLiteEngineUrl -OutFile $outputFile
-} catch {
-    echo "[DRONE] Primary URL failed for lite engine, attempting to download from secondary URL"
-    Invoke-WebRequest -Uri $secondaryLiteEngineUrl -OutFile $outputFile
-}
-
-New-NetFirewallRule -DisplayName "ALLOW TCP PORT 9079" -Direction inbound -Profile Any -Action Allow -LocalPort 9079 -Protocol TCP
+{{ if .IsHosted }}
+# For hosted - no restart needed, start lite-engine directly
+echo "[DRONE] Starting lite-engine (hosted mode)"
 Start-Process -FilePath "C:\Program Files\lite-engine\lite-engine.exe" -ArgumentList "server --env-file=`"C:\Program Files\lite-engine\.env`"" -RedirectStandardOutput "{{ .LiteEngineLogsPath }}" -RedirectStandardError "C:\Program Files\lite-engine\log.err"
 
-if (${{ .IsHosted }} -eq $true) {
-	netsh interface ipv4 add dnsserver "Ethernet" 8.8.8.8 index=1
-	netsh interface ipv4 add dnsserver "Ethernet" 1.1.1.1 index=2
-	netsh interface ipv4 add dnsserver "Ethernet" 8.8.4.4 index=3
-	ipconfig /flushdns
-	Write-Host "DNS server added to Ethernet interface."
-} 
-echo "[DRONE] Initialization Complete"
+netsh interface ipv4 add dnsserver "Ethernet" 8.8.8.8 index=1
+netsh interface ipv4 add dnsserver "Ethernet" 1.1.1.1 index=2
+netsh interface ipv4 add dnsserver "Ethernet" 8.8.4.4 index=3
+ipconfig /flushdns
+Write-Host "DNS server added to Ethernet interface."
+echo "[DRONE] Initialization Complete (hosted)"
+{{ else }}
+# ============================================
+# SETUP PHASE 2 TO RUN AFTER RESTART
+# ============================================
+echo "[DRONE] Setting up post-restart script"
 
+# Create Phase 2 script content
+$phase2Content = @'
+$ProgressPreference = 'SilentlyContinue'
+$ErrorActionPreference = 'Continue'
+
+# Log file for Phase 2
+$logFile = "C:\Program Files\lite-engine\phase2.log"
+"Phase 2 started at $(Get-Date)" | Out-File $logFile
+
+# Wait for system to stabilize after restart
+Start-Sleep -Seconds 20
+
+# Start Docker service
+"Starting Docker service..." | Out-File $logFile -Append
+$timeout = 180
+$elapsed = 0
+while ($elapsed -lt $timeout) {
+    Start-Service docker -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 5
+    $svc = Get-Service docker -ErrorAction SilentlyContinue
+    if ($svc.Status -eq "Running") {
+        "Docker service is running!" | Out-File $logFile -Append
+        break
+    }
+    "Waiting for Docker... ($elapsed seconds)" | Out-File $logFile -Append
+    $elapsed += 5
+}
+
+# Verify Docker
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
+docker version 2>&1 | Out-File $logFile -Append
+
+# Start lite-engine
+"Starting lite-engine..." | Out-File $logFile -Append
+Start-Process -FilePath "C:\Program Files\lite-engine\lite-engine.exe" -ArgumentList "server --env-file=`"C:\Program Files\lite-engine\.env`"" -RedirectStandardOutput "C:\Program Files\lite-engine\log.out" -RedirectStandardError "C:\Program Files\lite-engine\log.err"
+
+Start-Sleep -Seconds 5
+$le = Get-Process -Name "lite-engine" -ErrorAction SilentlyContinue
+if ($le) {
+    "lite-engine started (PID: $($le.Id))" | Out-File $logFile -Append
+}
+
+# Cleanup
+Unregister-ScheduledTask -TaskName "DroneInitPhase2" -Confirm:$false -ErrorAction SilentlyContinue
+Remove-Item "C:\drone-init-phase1-complete.marker" -Force -ErrorAction SilentlyContinue
+Remove-Item "C:\drone-init-phase2.ps1" -Force -ErrorAction SilentlyContinue
+
+"Phase 2 complete at $(Get-Date)" | Out-File $logFile -Append
+'@
+
+$phase2Content | Out-File -FilePath $phase2Script -Encoding ASCII
+
+# Create marker file
+"Phase 1 Complete at $(Get-Date)" | Out-File -FilePath $markerFile -Encoding ASCII
+
+# Register Phase 2 to run at startup using Scheduled Task
+$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-ExecutionPolicy Bypass -WindowStyle Hidden -File `"$phase2Script`""
+$trigger = New-ScheduledTaskTrigger -AtStartup
+$principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -DontStopOnIdleEnd
+Register-ScheduledTask -TaskName "DroneInitPhase2" -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+
+echo "[DRONE] Phase 1 Complete"
+echo "[DRONE] Containers and Hyper-V features installed"
+echo "[DRONE] Docker CE installed"
+echo "[DRONE] Restarting VM in 5 seconds..."
+echo "[DRONE] After restart: Docker will start, then lite-engine will start"
+
+# Trigger restart
+Start-Sleep -Seconds 5
+Restart-Computer -Force
+{{ end }}
 </powershell>

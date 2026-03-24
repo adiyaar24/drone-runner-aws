@@ -201,3 +201,17 @@ func WithSubnet(subnetName string) Option {
 		p.subnetName = subnetName
 	}
 }
+
+// WithExistingSubnetID returns an option to attach the NIC to an existing subnet by full ARM resource ID.
+func WithExistingSubnetID(subnetID string) Option {
+	return func(p *config) {
+		p.existingSubnetID = subnetID
+	}
+}
+
+// WithVNetResourceGroup returns the resource group name that contains the VNet (when using vnet/subnet by name).
+func WithVNetResourceGroup(resourceGroup string) Option {
+	return func(p *config) {
+		p.vnetResourceGroup = resourceGroup
+	}
+}
